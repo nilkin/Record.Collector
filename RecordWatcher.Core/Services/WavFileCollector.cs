@@ -14,7 +14,7 @@ public class WavFileCollector
     }
     public List<string> GetWavFiles(string folderPath)
     {
-        List<string> wavFiles = new();
+        List<string> wavFiles = [];
 
         if (Directory.Exists(folderPath))
         {

@@ -12,6 +12,7 @@ namespace FileWatcherLibrary
         private readonly Queue<string> _fileQueue;
         private readonly Queue<string> _failedQueue;
         private static readonly object _dbLock = new();
+        private static readonly object _logLock = new();
         public string _dbConfig;
 
         public FileMonitor(string folderPath, string logFilePath, string dbConfig)
@@ -23,6 +24,14 @@ namespace FileWatcherLibrary
 
         public FileMonitor(string folderPath, string logFilePath, Queue<string> fileQueue, Queue<string> failedQueue, string dbConfig)
         {
+            if (!string.IsNullOrEmpty(folderPath))
+            {
+                _watcher = new FileSystemWatcher(folderPath);
+            }
+            else
+            {
+                throw new ArgumentException("Folder path must be provided.");
+            }
             _logFilePath = logFilePath;
             _fileQueue = fileQueue;
             _folderPath = folderPath;
@@ -40,14 +49,21 @@ namespace FileWatcherLibrary
                 IncludeSubdirectories = true,
                 EnableRaisingEvents = true
             };
-
             _watcher.Created += async (sender, e) => await OnCreated(sender, e);
         }
 
         public void Stop()
         {
-            _watcher.EnableRaisingEvents = false;
+            if (_watcher != null)
+            {
+                _watcher.EnableRaisingEvents = false;
+            }
+            else
+            {
+                Console.WriteLine("Warning: File watcher was not initialized or already stopped.");
+            }
         }
+
 
         private async Task OnCreated(object sender, FileSystemEventArgs e)
         {
@@ -80,17 +96,29 @@ namespace FileWatcherLibrary
         }
         private void ProcessQueue()
         {
-            string filePath = _fileQueue.Peek();
-            var res = ParseFileName(filePath);
-            if (res == true)
+            lock (_fileQueue)
             {
-                _fileQueue.Dequeue();
-            }
-            else
-            {
-                _failedQueue.Enqueue(filePath);
+                if (_fileQueue.Count == 0)
+                {
+                    Console.WriteLine("No files in the queue to process.");
+                    return;
+                }
+
+                string filePath = _fileQueue.Peek();
+
+                var res = ParseFileName(filePath);
+
+                if (res == true)
+                {
+                    _fileQueue.Dequeue();
+                }
+                else
+                {
+                    _failedQueue.Enqueue(filePath);
+                }
             }
         }
+
         private void ProcessQueueForFailed()
         {
             while (_failedQueue.Count > 0)
@@ -206,50 +234,7 @@ namespace FileWatcherLibrary
             }
 
         }
-        //public bool AddFileInfo(CallFileInfo file)
-        //{
-        //    LogException("entry of AddFileInfo");
-        //    string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
-        //    string logFileName = $"log_{currentDate}.txt";
-        //    string logFilePath = Path.Combine(_logFilePath, logFileName);
-        //    using (StreamWriter sw = new(logFilePath, true))
-        //    {
-        //        sw.WriteLine($"{DateTime.Now}: {file.FileName} started.");
-        //    }
-        //    var con = new NpgsqlConnection(_dbConfig);
-        //    try
-        //    {
-        //        lock (_dbLock)
-        //        {
-
-        //            con.Open();
-        //            var cmd = con.CreateCommand();
-        //            cmd.CommandText = "INSERT INTO FILEINFO (CallInfo, Part1,Part2,DateTimeStr,FileName,CallID,FilePath,FolderPath) VALUES (@CallInfo, @Part1,@Part2,@DateTimeStr,@FileName,@CallID,@FilePath,@FolderPath)";
-        //            cmd.Parameters.AddWithValue("@CallInfo", file.CallInfo);
-        //            cmd.Parameters.AddWithValue("@Part1", file.Part1);
-        //            cmd.Parameters.AddWithValue("@Part2", file.Part2);
-        //            cmd.Parameters.AddWithValue("@DateTimeStr", file.DateTimeStr);
-        //            cmd.Parameters.AddWithValue("@FileName", file.FileName);
-        //            cmd.Parameters.AddWithValue("@CallID", file.CallID);
-        //            cmd.Parameters.AddWithValue("@FilePath", file.FilePath);
-        //            cmd.Parameters.AddWithValue("@FolderPath", file.FolderPath);
-        //            var result = cmd.ExecuteNonQuery();
-        //            con.Close();
-        //            using StreamWriter sw = new(logFilePath, true);
-        //            sw.WriteLine($"{DateTime.Now}: {file.FileName} ended.");
-        //            return true;
-
-        //        }
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        LogException(ex.ToString());
-        //        return false;
-        //    }
-
-
-
-        //}
+  
         public bool AddFileInfo(CallFileInfo file)
         {
             LogException("entry of AddFileInfo");
@@ -312,19 +297,18 @@ namespace FileWatcherLibrary
 
         public void LogException(string obj)
         {
+            lock (_logLock)
+            {
+                string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
+                string logFileName = $"log_{currentDate}.txt";
+                string logFilePath = Path.Combine(_logFilePath, logFileName);
 
-            string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
-            string logFileName = $"log_{currentDate}.txt";
-            string logFilePath = Path.Combine(_logFilePath, logFileName);
-
-            using StreamWriter sw = new(logFilePath, true);
-            sw.WriteLine($"{obj}: exception");
-
-            sw.WriteLine();
-
-            sw.Flush();
-            sw.Close();
-
+                using StreamWriter sw = new(logFilePath, true);
+                sw.WriteLine($"{obj}: exception");
+                sw.WriteLine();
+                sw.Flush();
+                sw.Close();
+            }
         }
 
     }

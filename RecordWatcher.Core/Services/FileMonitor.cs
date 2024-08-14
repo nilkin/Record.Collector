@@ -30,7 +30,6 @@ namespace FileWatcherLibrary
             }
             else
             {
-                _watcher.Created += async (sender, e) => await OnCreated(sender, e);
                 throw new ArgumentException("Folder path must be provided.");
             }
             _logFilePath = logFilePath;

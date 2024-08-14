@@ -15,10 +15,7 @@ public class FileWatcherController : ControllerBase
         string logFilePath = configuration["FileSettings:LogFilePath"];
         string databaseConfig = configuration["ConnectionStrings:DefaultConnection"];
 
-        Queue<string> fileQueue = new();
-        Queue<string> failedQueue = new();
-
-        _fileMonitor = new FileMonitor(_folderPath, logFilePath, fileQueue, failedQueue, databaseConfig);
+        _fileMonitor = new FileMonitor(_folderPath, logFilePath,databaseConfig);
         _wavFileCollector = new WavFileCollector(_fileMonitor);
     }
 

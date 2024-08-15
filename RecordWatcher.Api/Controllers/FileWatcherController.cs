@@ -1,5 +1,6 @@
 ﻿using FileWatcherLibrary;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace RecordWatcher.Api.Controllers;
 [ApiController]
@@ -33,9 +34,11 @@ public class FileWatcherController : ControllerBase
         return Ok("File monitor stopped.");
     }
     [HttpPost("collect-wav-files")]
-    public IActionResult CollectAndSaveWavFiles()
+    public IActionResult CollectAndSaveWavFiles(
+    [FromQuery, SwaggerSchema(Format = "date-time", Description = "Start date in the format: YYYY-MM-DD")] DateTime? startDate = null,
+    [FromQuery, SwaggerSchema(Format = "date-time", Description = "End date in the format: YYYY-MM-DD")] DateTime? endDate = null)
     {
-        var wavFiles = _wavFileCollector.GetWavFiles(_folderPath);
+        var wavFiles = _wavFileCollector.GetWavFiles(_folderPath, startDate, endDate);
 
         if (wavFiles.Count == 0)
         {
@@ -45,4 +48,5 @@ public class FileWatcherController : ControllerBase
         _wavFileCollector.SaveWavFilesToDatabase(wavFiles);
         return Ok($"{wavFiles.Count} WAV files have been saved to the database.");
     }
+
 }

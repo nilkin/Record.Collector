@@ -12,23 +12,36 @@ public class WavFileCollector
     {
         _monitor = monitor;
     }
-    public List<string> GetWavFiles(string folderPath)
+    public List<string> GetWavFiles(string folderPath, DateTime? startDate = null, DateTime? endDate = null)
     {
         List<string> wavFiles = new();
+        DateTime start = startDate ?? DateTime.MinValue;
+        DateTime end = endDate ?? DateTime.MaxValue;
 
         if (Directory.Exists(folderPath))
         {
             string[] files = Directory.GetFiles(folderPath, "*.wav", SearchOption.AllDirectories);
-            Console.WriteLine($"files count : {files.Length}");
-            wavFiles.AddRange(files);
+            Console.WriteLine($"Total files found: {files.Length}");
+
+            foreach (string file in files)
+            {
+                DateTime lastWriteTime = File.GetLastWriteTime(file);
+                if (lastWriteTime >= start && lastWriteTime <= end)
+                {
+                    wavFiles.Add(file);
+                }
+            }
         }
         else
         {
-            _monitor.LogException("Path is wrong");
+            _monitor.LogException("Invalid folder path.");
         }
 
         return wavFiles;
     }
+
+
+
 
     public void SaveWavFilesToDatabase(List<string> wavFiles)
     {

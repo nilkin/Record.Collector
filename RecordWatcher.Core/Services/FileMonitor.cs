@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 namespace FileWatcherLibrary
 {
     public class FileMonitor
+
     {
         private readonly FileSystemWatcher _watcher;
         private readonly string _logFilePath;
@@ -12,10 +13,10 @@ namespace FileWatcherLibrary
         private readonly Queue<string> _fileQueue;
         private readonly Queue<string> _failedQueue;
         private static readonly object _dbLock = new();
-        private static readonly object _logLock = new();
         private readonly string _dbConfig;
-
+        private readonly Timer _restartTimer;
         public FileMonitor(string folderPath, string logFilePath, string dbConfig)
+
         {
             if (string.IsNullOrEmpty(folderPath))
                 throw new ArgumentException("Folder path must be provided.");
@@ -27,28 +28,56 @@ namespace FileWatcherLibrary
             _failedQueue = new Queue<string>();
 
             // Initialize and configure the FileSystemWatcher
+
             _watcher = new FileSystemWatcher(_folderPath)
             {
                 NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.CreationTime | NotifyFilters.LastWrite,
                 Filter = "*.wav",
-                IncludeSubdirectories = true
+                IncludeSubdirectories = true,
+                InternalBufferSize = 64 * 1024 // 64 KB buffer size
             };
-            _watcher.Created += OnCreated;
-        }
 
+            _watcher.Created += OnCreated;
+            _watcher.Error += OnError;
+            _restartTimer = new Timer(RestartWatcher, null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+
+        }
         public void Start()
         {
             // Enable FileSystemWatcher when starting the monitor
             _watcher.EnableRaisingEvents = true;
-            Console.WriteLine("File Monitor started.");
+            LogMessage($"File Monitor started: {DateTime.Now}");
+
+            // Start periodic status checks
+            StartStatusCheckTimer();
         }
+
 
         public void Stop()
         {
             if (_watcher != null)
             {
                 _watcher.EnableRaisingEvents = false;
-                Console.WriteLine("File Monitor stopped.");
+                _restartTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                LogMessage($"File Monitor stopped: {DateTime.Now}");
+            }
+        }
+        private void StartStatusCheckTimer()
+        {
+            // Check the status of FileSystemWatcher every 5 minutes
+            Timer statusCheckTimer = new Timer(CheckWatcherStatus, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+        }
+
+        private void CheckWatcherStatus(object state)
+        {
+            // Log the current status of FileSystemWatcher
+            LogMessage($"Status check - FileSystemWatcher status: {_watcher.EnableRaisingEvents} - {DateTime.Now}");
+
+            // If the FileSystemWatcher is not enabled, attempt to restart it
+            if (!_watcher.EnableRaisingEvents)
+            {
+                LogMessage("FileSystemWatcher is not enabled. Attempting to restart...");
+                RestartWatcher(null);
             }
         }
 
@@ -116,6 +145,35 @@ namespace FileWatcherLibrary
                 }
             }
         }
+        private void OnError(object sender, ErrorEventArgs e)
+        {
+            // Log the error message
+            LogMessage($"FileSystemWatcher error message: {e.GetException().Message} - {DateTime.Now}");
+
+            // Log the status of FileSystemWatcher
+            LogMessage($"FileSystemWatcher status: {_watcher.EnableRaisingEvents} - {DateTime.Now}");
+
+            // Attempt to restart the watcher
+            RestartWatcher(null);
+        }
+
+
+        private void RestartWatcher(object state)
+        {
+            try
+            {
+                if (!_watcher.EnableRaisingEvents)
+                {
+                    _watcher.EnableRaisingEvents = true;
+                    LogMessage($"FileSystemWatcher restarted: {DateTime.Now}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogException($"Error restarting FileSystemWatcher: {ex.Message}");
+            }
+        }
+
 
         private void LogFailedFile(string filePath)
         {
@@ -123,23 +181,20 @@ namespace FileWatcherLibrary
             string logFileName = $"log_{currentDate}.txt";
             string logFilePath = Path.Combine(_logFilePath, logFileName);
 
-            lock (_logLock)
-            {
                 using StreamWriter writer = new(logFilePath, true);
                 writer.WriteLine($"Failed to process file: {filePath} at {DateTime.Now}");
-            }
         }
 
         public bool ParseFileName(string filePath)
         {
-            Console.WriteLine($"Parse process started for {filePath}");
+            LogMessage($"Parse process started for {filePath}: {DateTime.Now}");
 
             string fileName = Path.GetFileName(filePath);
             string[] parts = fileName.Split('_');
 
             if (parts.Length < 3)
             {
-                Console.WriteLine("File name does not match expected format.");
+                LogMessage($"File name does not match expected format: {DateTime.Now}");
                 return false;
             }
 
@@ -168,14 +223,10 @@ namespace FileWatcherLibrary
             if (AddFileInfo(callRecord))
             {
                 LogFileName(callRecord);
-                Console.WriteLine(fileName + " completed.");
+                LogMessage($"{fileName} completed: {DateTime.Now}");
                 return true;
             }
-            else
-            {
-                Console.WriteLine(fileName + " skipped.");
-                return false;
-            }
+            return true;
         }
 
         public void LogFileName(CallFileInfo obj)
@@ -184,10 +235,8 @@ namespace FileWatcherLibrary
             string logFileName = $"log_{currentDate}.txt";
             string logFilePath = Path.Combine(_logFilePath, logFileName);
 
-            lock (_logLock)
-            {
                 using StreamWriter sw = new(logFilePath, true);
-                sw.WriteLine($"{DateTime.Now}: {obj.FileName} was created.");
+                sw.WriteLine($"{DateTime.Now}: {obj.FileName} FileName was created.");
                 sw.WriteLine($"CallInfo: {obj.CallInfo}");
                 sw.WriteLine($"Part1: {obj.Part1}");
                 sw.WriteLine($"Part2: {obj.Part2}");
@@ -197,7 +246,6 @@ namespace FileWatcherLibrary
                 sw.WriteLine($"FilePath: {obj.FilePath}");
                 sw.WriteLine($"FolderPath: {obj.FolderPath}");
                 sw.WriteLine();
-            }
         }
 
         public bool AddFileInfo(CallFileInfo file)
@@ -220,20 +268,20 @@ namespace FileWatcherLibrary
                     con.Open();
 
                     // Check if the file already exists in the database
-                    using var checkCmd = con.CreateCommand();
-                    checkCmd.CommandText = "SELECT COUNT(*) FROM FILEINFO WHERE FileName = @FileName";
-                    checkCmd.Parameters.AddWithValue("@FileName", file.FileName);
-                    int fileCount = Convert.ToInt32(checkCmd.ExecuteScalar());
+                    using var cmd = con.CreateCommand();
+                    cmd.CommandText = "SELECT COUNT(*) FROM FILEINFO WHERE FileName = @FileName";
+                    cmd.Parameters.AddWithValue("@FileName", file.FileName);
+                    int fileCount = Convert.ToInt32(cmd.ExecuteScalar());
 
                     if (fileCount > 0)
                     {
+                        con.Close();
                         using (StreamWriter sw = new(logFilePath, true))
                             sw.WriteLine($"{DateTime.Now}: {file.FileName} already exists. Skipping insertion.");
-                        return false;
+                        return true;
                     }
 
-                    // Insert new file information into the database
-                    using var cmd = con.CreateCommand();
+
                     cmd.CommandText = "INSERT INTO FILEINFO (CallInfo, Part1, Part2, DateTimeStr, FileName, CallID, FilePath, FolderPath) VALUES (@CallInfo, @Part1, @Part2, @DateTimeStr, @FileName, @CallID, @FilePath, @FolderPath)";
                     cmd.Parameters.AddWithValue("@CallInfo", file.CallInfo);
                     cmd.Parameters.AddWithValue("@Part1", file.Part1);
@@ -244,7 +292,7 @@ namespace FileWatcherLibrary
                     cmd.Parameters.AddWithValue("@FilePath", file.FilePath);
                     cmd.Parameters.AddWithValue("@FolderPath", file.FolderPath);
                     cmd.ExecuteNonQuery();
-
+                    con.Close();
                     using (StreamWriter sw = new(logFilePath, true))
                         sw.WriteLine($"{DateTime.Now}: {file.FileName} insertion completed.");
 
@@ -260,30 +308,24 @@ namespace FileWatcherLibrary
 
         public void LogMessage(string message)
         {
-            lock (_logLock)
-            {
-                string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
-                string logFileName = $"log_{currentDate}.txt";
-                string logFilePath = Path.Combine(_logFilePath, logFileName);
+            string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
+            string logFileName = $"log_{currentDate}.txt";
+            string logFilePath = Path.Combine(_logFilePath, logFileName);
 
-                using StreamWriter sw = new(logFilePath, true);
-                sw.WriteLine($"{DateTime.Now}: {message}");
-                sw.WriteLine();
-            }
+            using StreamWriter sw = new(logFilePath, true);
+            sw.WriteLine($"{DateTime.Now}: {message}");
+            sw.WriteLine();
         }
 
         public void LogException(string exception)
         {
-            lock (_logLock)
-            {
-                string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
-                string logFileName = $"log_{currentDate}.txt";
-                string logFilePath = Path.Combine(_logFilePath, logFileName);
+            string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
+            string logFileName = $"log_{currentDate}.txt";
+            string logFilePath = Path.Combine(_logFilePath, logFileName);
 
-                using StreamWriter sw = new(logFilePath, true);
-                sw.WriteLine($"{DateTime.Now}: {exception}");
-                sw.WriteLine();
-            }
+            using StreamWriter sw = new(logFilePath, true);
+            sw.WriteLine($"{DateTime.Now}: {exception}");
+            sw.WriteLine();
         }
     }
 }

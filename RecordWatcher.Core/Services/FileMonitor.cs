@@ -72,6 +72,7 @@ namespace FileWatcherLibrary
                     }
                 });
             }
+            _watcher.EnableRaisingEvents = true;
         }
 
         private void ProcessQueue()

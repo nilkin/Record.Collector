@@ -2,12 +2,16 @@
 
 public class CallFileInfo
 {
-    public string CallID { get; set; }
-    public string CallInfo { get; set; }
-    public string Part1 { get; set; }
-    public string Part2 { get; set; }
-    public string DateTimeStr { get; set; }
+    public string CallId { get; set; }
+    public string Info { get; set; }
+    public string Parties { get; set; }
+    public string Source { get; set; }
+    public string Dest { get; set; }
+    public string Ext { get; set; }
+    public string ExternalNumber { get; set; }
+    public string Date { get; set; }
+    public int Seconds { get; set; }
     public string FileName { get; set; }
-    public string FilePath { get; set; }
-    public string FolderPath { get; set; }
+    public string Path { get; set; }
+    public string FullName { get; set; }
 }

@@ -1,6 +1,9 @@
 ﻿using FileWatcherLibrary.Models;
+using NAudio.Wave;
 using Npgsql;
+using System.Dynamic;
 using System.Text.RegularExpressions;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace FileWatcherLibrary
 {
@@ -181,8 +184,8 @@ namespace FileWatcherLibrary
             string logFileName = $"log_{currentDate}.txt";
             string logFilePath = Path.Combine(_logFilePath, logFileName);
 
-                using StreamWriter writer = new(logFilePath, true);
-                writer.WriteLine($"Failed to process file: {filePath} at {DateTime.Now}");
+            using StreamWriter writer = new(logFilePath, true);
+            writer.WriteLine($"Failed to process file: {filePath} at {DateTime.Now}");
         }
 
         public bool ParseFileName(string filePath)
@@ -190,32 +193,50 @@ namespace FileWatcherLibrary
             LogMessage($"Parse process started for {filePath}: {DateTime.Now}");
 
             string fileName = Path.GetFileName(filePath);
+            string folderPath = Path.GetDirectoryName(filePath);
             string[] parts = fileName.Split('_');
-
             if (parts.Length < 3)
             {
                 LogMessage($"File name does not match expected format: {DateTime.Now}");
                 return false;
             }
+            string parties = parts[1];
+            string source = parties.Split("-")[0].Length > 4 ? parties.Split("-")[0][^9..] : parties.Split("-")[0];
+            string dest = parties.Split("-")[1];
+            string ext = "";
+            string externalNumber = "";
+            if (dest.Length <= 4)
+                ext = dest;
+            else if (dest.Length > 4)
+                externalNumber = dest;
+
+            if (source.Length <= 4)
+                ext = source;
+            else if (source.Length > 4)
+                externalNumber = source;
+
+            using var audioFileReader = new AudioFileReader(filePath);
+
 
             string callInfo = Regex.Replace(parts[0], @"[\[\]]", "");
-            string[] partyParts = parts[1].Split('-');
-            string part1 = partyParts.Length > 0 ? partyParts[0] : string.Empty;
-            string part2 = partyParts.Length > 1 ? partyParts[1] : string.Empty;
 
             string dateTimeStr = Regex.Match(parts[2], @"(\d{14})").Value;
             string callId = Regex.Match(parts[2], @"\((\d+)\)").Groups[1].Value;
 
             CallFileInfo callRecord = new()
             {
-                CallInfo = callInfo,
-                Part1 = part1,
-                Part2 = part2,
-                DateTimeStr = dateTimeStr,
-                CallID = callId,
+                Info = callInfo,
+                CallId = callId,
+                FullName = filePath,
+                Path = folderPath,
                 FileName = fileName,
-                FilePath = filePath,
-                FolderPath = _folderPath
+                Date = dateTimeStr,
+                Parties = parties,
+                Source = source,
+                Dest = dest,
+                Ext = ext,
+                ExternalNumber = externalNumber,
+                Seconds = (int)audioFileReader.TotalTime.TotalSeconds
             };
 
             LogMessage("ParseFileName is working, date: " + DateTime.Now);
@@ -235,17 +256,20 @@ namespace FileWatcherLibrary
             string logFileName = $"log_{currentDate}.txt";
             string logFilePath = Path.Combine(_logFilePath, logFileName);
 
-                using StreamWriter sw = new(logFilePath, true);
-                sw.WriteLine($"{DateTime.Now}: {obj.FileName} FileName was created.");
-                sw.WriteLine($"CallInfo: {obj.CallInfo}");
-                sw.WriteLine($"Part1: {obj.Part1}");
-                sw.WriteLine($"Part2: {obj.Part2}");
-                sw.WriteLine($"DateTimeStr: {obj.DateTimeStr}");
-                sw.WriteLine($"CallID: {obj.CallID}");
-                sw.WriteLine($"FileName: {obj.FileName}");
-                sw.WriteLine($"FilePath: {obj.FilePath}");
-                sw.WriteLine($"FolderPath: {obj.FolderPath}");
-                sw.WriteLine();
+            using StreamWriter sw = new(logFilePath, true);
+            sw.WriteLine($"{DateTime.Now}: {obj.FileName} FileName was created.");
+            sw.WriteLine($"FullName: {obj.FullName}");
+            sw.WriteLine($"FileName: {obj.FileName}");
+            sw.WriteLine($"CallId: {obj.CallId}");
+            sw.WriteLine($"Info: {obj.Info}");
+            sw.WriteLine($"Path: {obj.Path}");
+            sw.WriteLine($"Parties: {obj.Parties}");
+            sw.WriteLine($"Ext: {obj.Ext}");
+            sw.WriteLine($"Dest: {obj.Dest}");
+            sw.WriteLine($"ExternalNumber: {obj.ExternalNumber}");
+            sw.WriteLine($"Date: {obj.Date}");
+            sw.WriteLine($"Seconds: {obj.Seconds}");
+            sw.WriteLine();
         }
 
         public bool AddFileInfo(CallFileInfo file)
@@ -282,20 +306,26 @@ namespace FileWatcherLibrary
                         return true;
                     }
 
+                        cmd.CommandText = @"INSERT INTO ""CallRecords"" (
+                    ""CallId"", ""Info"", ""Ext"", ""Dest"", ""Date"", 
+                    ""Parties"", ""Source"", ""FileName"", ""FullName"",
+                    ""Path"", ""ExternalNumber"", ""Seconds""
+                    ) VALUES (
+                        @CallId, @Info, @Ext, @Dest, @Date, @Parties, @Source, @FileName, @FullName, @Path, @ExternalNumber, @Seconds
+                    );";
 
-                    cmd.CommandText = @"INSERT INTO ""CallRecords"" 
-                                (""CallInfo"", ""Part1"", ""Part2"", ""DateTimeStr"", ""FileName"", ""CallId"", ""FilePath"", ""FolderPath"") 
-                                VALUES 
-                                (@CallInfo, @Part1, @Part2, @DateTimeStr, @FileName, @CallId, @FilePath, @FolderPath)";
-
-                    cmd.Parameters.AddWithValue("@CallInfo", file.CallInfo);
-                    cmd.Parameters.AddWithValue("@Part1", file.Part1);
-                    cmd.Parameters.AddWithValue("@Part2", file.Part2);
-                    cmd.Parameters.AddWithValue("@DateTimeStr", file.DateTimeStr);
+                    cmd.Parameters.AddWithValue("@CallId", file.CallId);
+                    cmd.Parameters.AddWithValue("@Info", file.Info);
+                    cmd.Parameters.AddWithValue("@Ext", file.Ext);
+                    cmd.Parameters.AddWithValue("@Dest", file.Dest);
+                    cmd.Parameters.AddWithValue("@Date", file.Date);
+                    cmd.Parameters.AddWithValue("@Parties", file.Parties);
+                    cmd.Parameters.AddWithValue("@Source", file.Source);
                     cmd.Parameters.AddWithValue("@FileName", file.FileName);
-                    cmd.Parameters.AddWithValue("@CallId", file.CallID);
-                    cmd.Parameters.AddWithValue("@FilePath", file.FilePath);
-                    cmd.Parameters.AddWithValue("@FolderPath", file.FolderPath);
+                    cmd.Parameters.AddWithValue("@FullName", file.FullName);
+                    cmd.Parameters.AddWithValue("@Path", file.Path);
+                    cmd.Parameters.AddWithValue("@ExternalNumber", file.ExternalNumber);
+                    cmd.Parameters.AddWithValue("@Seconds", file.Seconds);
                     cmd.ExecuteNonQuery();
                     con.Close();
                     using (StreamWriter sw = new(logFilePath, true))

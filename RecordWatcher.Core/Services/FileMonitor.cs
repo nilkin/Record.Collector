@@ -269,7 +269,8 @@ namespace FileWatcherLibrary
 
                     // Check if the file already exists in the database
                     using var cmd = con.CreateCommand();
-                    cmd.CommandText = "SELECT COUNT(*) FROM FILEINFO WHERE FileName = @FileName";
+                    cmd.CommandText = "SELECT COUNT(*) FROM \"CallRecords\" WHERE \"FileName\" = @FileName";
+
                     cmd.Parameters.AddWithValue("@FileName", file.FileName);
                     int fileCount = Convert.ToInt32(cmd.ExecuteScalar());
 
@@ -282,13 +283,17 @@ namespace FileWatcherLibrary
                     }
 
 
-                    cmd.CommandText = "INSERT INTO FILEINFO (CallInfo, Part1, Part2, DateTimeStr, FileName, CallID, FilePath, FolderPath) VALUES (@CallInfo, @Part1, @Part2, @DateTimeStr, @FileName, @CallID, @FilePath, @FolderPath)";
+                    cmd.CommandText = @"INSERT INTO ""CallRecords"" 
+                                (""CallInfo"", ""Part1"", ""Part2"", ""DateTimeStr"", ""FileName"", ""CallId"", ""FilePath"", ""FolderPath"") 
+                                VALUES 
+                                (@CallInfo, @Part1, @Part2, @DateTimeStr, @FileName, @CallId, @FilePath, @FolderPath)";
+
                     cmd.Parameters.AddWithValue("@CallInfo", file.CallInfo);
                     cmd.Parameters.AddWithValue("@Part1", file.Part1);
                     cmd.Parameters.AddWithValue("@Part2", file.Part2);
                     cmd.Parameters.AddWithValue("@DateTimeStr", file.DateTimeStr);
                     cmd.Parameters.AddWithValue("@FileName", file.FileName);
-                    cmd.Parameters.AddWithValue("@CallID", file.CallID);
+                    cmd.Parameters.AddWithValue("@CallId", file.CallID);
                     cmd.Parameters.AddWithValue("@FilePath", file.FilePath);
                     cmd.Parameters.AddWithValue("@FolderPath", file.FolderPath);
                     cmd.ExecuteNonQuery();

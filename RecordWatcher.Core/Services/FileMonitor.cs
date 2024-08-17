@@ -214,10 +214,21 @@ namespace FileWatcherLibrary
                 ext = source;
             else if (source.Length > 4)
                 externalNumber = source;
+            int seconds = 0;
 
-            using var audioFileReader = new AudioFileReader(filePath);
-
-
+            try
+            {
+                using var waveFileReader = new WaveFileReader(filePath);
+                seconds = (int)waveFileReader.TotalTime.TotalSeconds;
+            }
+            catch (FormatException ex)
+            {
+                LogMessage($"Invalid WAV file - No fmt chunk found:{ex} - {DateTime.Now}");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Unexpected error while reading WAV file:{ex} - {DateTime.Now}");
+            }
             string callInfo = Regex.Replace(parts[0], @"[\[\]]", "");
 
             string dateTimeStr = Regex.Match(parts[2], @"(\d{14})").Value;
@@ -236,7 +247,7 @@ namespace FileWatcherLibrary
                 Dest = dest,
                 Ext = ext,
                 ExternalNumber = externalNumber,
-                Seconds = (int)audioFileReader.TotalTime.TotalSeconds
+                Seconds = seconds
             };
 
             LogMessage("ParseFileName is working, date: " + DateTime.Now);

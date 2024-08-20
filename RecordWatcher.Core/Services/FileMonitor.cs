@@ -329,7 +329,7 @@ namespace FileWatcherLibrary
                     cmd.Parameters.AddWithValue("@Info", file.Info);
                     cmd.Parameters.AddWithValue("@Ext", file.Ext);
                     cmd.Parameters.AddWithValue("@Dest", file.Dest);
-                    cmd.Parameters.AddWithValue("@Date", file.Date);
+                    cmd.Parameters.AddWithValue("@Date", DateTime.ParseExact(file.Date, "yyyyMMddHHmmss", null));
                     cmd.Parameters.AddWithValue("@Parties", file.Parties);
                     cmd.Parameters.AddWithValue("@Source", file.Source);
                     cmd.Parameters.AddWithValue("@FileName", file.FileName);
